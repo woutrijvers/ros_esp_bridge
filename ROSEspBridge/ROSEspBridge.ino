@@ -60,10 +60,16 @@
    //#define ROBOGAIA
    
    /* Encoders directly attached to Arduino board */
-   #define ARDUINO_ENC_COUNTER
+   //#define ARDUINO_ENC_COUNTER
+
+   /* Encoders directly attached to ESP32 board */
+   #define ESP32_ENC_COUNTER
 
    /* L298 Motor driver*/
-   #define L298_MOTOR_DRIVER
+   //#define L298_MOTOR_DRIVER
+
+   /* ESP pinout Motor driver */
+   #define ESP32_MOTOR_DRIVER
 #endif
 
 //#define USE_SERVOS  // Enable use of PWM servos as defined in servos.h
@@ -103,8 +109,8 @@
   /* PID parameters and functions */
   #include "diff_controller.h"
 
-  /* Run the PID loop at 30 times per second */
-  #define PID_RATE           30     // Hz
+  /* Run the PID loop at 20 times per second */
+  #define PID_RATE           20     // Hz
 
   /* Convert the rate into an interval */
   const int PID_INTERVAL = 1000 / PID_RATE;
@@ -122,7 +128,7 @@
 
 // A pair of varibles to help parse serial commands (thanks Fergs)
 int arg = 0;
-int index = 0;
+int index_ = 0;
 
 // Variable to hold an input character
 char chr;
@@ -146,7 +152,7 @@ void resetCommand() {
   arg1 = 0;
   arg2 = 0;
   arg = 0;
-  index = 0;
+  index_ = 0;
 }
 
 /* Run a command.  Commands are defined in commands.h */
@@ -168,13 +174,14 @@ int runCommand() {
   case DIGITAL_READ:
     Serial.println(digitalRead(arg1));
     break;
-  case ANALOG_WRITE:
-    analogWrite(arg1, arg2);
-    Serial.println("OK"); 
-    break;
   case DIGITAL_WRITE:
     if (arg2 == 0) digitalWrite(arg1, LOW);
     else if (arg2 == 1) digitalWrite(arg1, HIGH);
+    Serial.println("OK"); 
+    break;
+#ifdef ARDUINO_ENC_COUNTER    
+  case ANALOG_WRITE:
+    analogWrite(arg1, arg2);
     Serial.println("OK"); 
     break;
   case PIN_MODE:
@@ -182,6 +189,7 @@ int runCommand() {
     else if (arg2 == 1) pinMode(arg1, OUTPUT);
     Serial.println("OK");
     break;
+#endif
   case PING:
     Serial.println(Ping(arg1));
     break;
@@ -271,6 +279,43 @@ void setup() {
     
     // enable PCINT1 and PCINT2 interrupt in the general interrupt mask
     PCICR |= (1 << PCIE1) | (1 << PCIE2);
+  #elif defined ESP32_ENC_COUNTER
+    // motor encoder setup
+    pinMode(LEFT_ENC_PIN_A, INPUT_PULLUP); // hall encoders are open drain, so pullup to 3.3V
+    pinMode(LEFT_ENC_PIN_B, INPUT_PULLUP); // hall encoders are open drain, so pullup to 3.3V
+    pinMode(RIGHT_ENC_PIN_A, INPUT_PULLUP); // hall encoders are open drain, so pullup to 3.3V
+    pinMode(RIGHT_ENC_PIN_B, INPUT_PULLUP); // hall encoders are open drain, so pullup to 3.3V
+    
+    // tell pin change mask to listen to left encoder pins
+    // Attach interrupt handlers for the left encoder pins
+    attachInterrupt(digitalPinToInterrupt(LEFT_ENC_PIN_A), leftEncoderISR, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(LEFT_ENC_PIN_B), leftEncoderISR, CHANGE);
+    
+    // Attach interrupt handlers for the right encoder pins
+    attachInterrupt(digitalPinToInterrupt(RIGHT_ENC_PIN_A), rightEncoderISR, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(RIGHT_ENC_PIN_B), rightEncoderISR, CHANGE);
+    
+  #endif
+  #ifdef ESP32_MOTOR_DRIVER
+    // Configure PWM-settings for channel 0
+    ledcSetup(0, 5000, 8); // LEDC-channel 0, frequency of 5000 Hz, 8-bit resolution
+    // Attach LEDC-channel to pin
+    ledcAttachPin(LEFT_MOTOR_FORWARD, LEFT_MOTOR_FORWARD_CHANNEL); // LEFT_MOTOR_FORWARD voor LEDC-channel 0
+  
+    // Configure PWM-settings for channel 1
+    ledcSetup(1, 5000, 8); // LEDC-channel 1, frequency of 5000 Hz, 8-bit resolution
+    // Attach LEDC-channel to pin
+    ledcAttachPin(LEFT_MOTOR_BACKWARD, LEFT_MOTOR_BACKWARD_CHANNEL); // LEFT_MOTOR_BACKWARD voor LEDC-channel 0
+
+    // Configure PWM-settings for channel 2
+    ledcSetup(2, 5000, 8); // LEDC-channel 2, frequency of 5000 Hz, 8-bit resolution
+    // Attach LEDC-channel to pin
+    ledcAttachPin(RIGHT_MOTOR_FORWARD, RIGHT_MOTOR_FORWARD_CHANNEL); // RIGHT_MOTOR_FORWARD voor LEDC-channel 2
+
+    // Configure PWM-settings for channel 3
+    ledcSetup(3, 5000, 8); // LEDC-channel 3, frequency of 5000 Hz, 8-bit resolution
+    // Attach LEDC-channel to pin
+    ledcAttachPin(RIGHT_MOTOR_BACKWARD, RIGHT_MOTOR_BACKWARD_CHANNEL); // RIGHT_MOTOR_BACKWARD voor LEDC-channel 3
   #endif
   initMotorController();
   resetPID();
@@ -300,8 +345,8 @@ void loop() {
 
     // Terminate a command with a CR
     if (chr == 13) {
-      if (arg == 1) argv1[index] = NULL;
-      else if (arg == 2) argv2[index] = NULL;
+      if (arg == 1) argv1[index_] = NULL;
+      else if (arg == 2) argv2[index_] = NULL;
       runCommand();
       resetCommand();
     }
@@ -310,9 +355,9 @@ void loop() {
       // Step through the arguments
       if (arg == 0) arg = 1;
       else if (arg == 1)  {
-        argv1[index] = NULL;
+        argv1[index_] = NULL;
         arg = 2;
-        index = 0;
+        index_ = 0;
       }
       continue;
     }
@@ -323,12 +368,12 @@ void loop() {
       }
       else if (arg == 1) {
         // Subsequent arguments can be more than one character
-        argv1[index] = chr;
-        index++;
+        argv1[index_] = chr;
+        index_++;
       }
       else if (arg == 2) {
-        argv2[index] = chr;
-        index++;
+        argv2[index_] = chr;
+        index_++;
       }
     }
   }
@@ -355,4 +400,3 @@ void loop() {
   }
 #endif
 }
-

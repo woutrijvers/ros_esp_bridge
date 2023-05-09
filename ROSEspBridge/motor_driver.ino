@@ -86,6 +86,48 @@
     setMotorSpeed(LEFT, leftSpeed);
     setMotorSpeed(RIGHT, rightSpeed);
   }
+#elif defined ESP32_MOTOR_DRIVER
+  void initMotorController() {
+    //Nothing to enable
+  }
+  
+  void setMotorSpeed(int i, int spd) {
+    unsigned char reverse = 0;
+  
+    if (spd < 0)
+    {
+      spd = -spd;
+      reverse = 1;
+    }
+    if (spd > 255)
+      spd = 255;
+    
+    if (i == LEFT) { 
+      if      (reverse == 0){
+        ledcWrite(LEFT_MOTOR_FORWARD_CHANNEL,spd);
+        ledcWrite(LEFT_MOTOR_BACKWARD_CHANNEL,0); 
+      }
+      else if (reverse == 1){ 
+        ledcWrite(LEFT_MOTOR_BACKWARD_CHANNEL,spd);
+        ledcWrite(LEFT_MOTOR_FORWARD_CHANNEL,0);  
+      }
+    }
+    else /*if (i == RIGHT) //no need for condition*/ {
+      if      (reverse == 0) { 
+        ledcWrite(RIGHT_MOTOR_FORWARD_CHANNEL,spd);
+        ledcWrite(RIGHT_MOTOR_BACKWARD_CHANNEL,0); 
+      }
+      else if (reverse == 1) { 
+        ledcWrite(RIGHT_MOTOR_BACKWARD_CHANNEL,spd);
+        ledcWrite(RIGHT_MOTOR_FORWARD_CHANNEL,0);  
+      }
+    }
+  }
+  
+  void setMotorSpeeds(int leftSpeed, int rightSpeed) {
+    setMotorSpeed(LEFT, leftSpeed);
+    setMotorSpeed(RIGHT, rightSpeed);
+  }
 #else
   #error A motor driver must be selected!
 #endif
